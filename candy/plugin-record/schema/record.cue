@@ -36,6 +36,11 @@
 	record_fps?: int & >=0 @go(RecordFps,type=int)
 	// record_audio — capture audio with the desktop recording.
 	record_audio?: bool @go(RecordAudio)
+	// record_env — extra environment for the recorder process (desktop mode needs the
+	// compositor session on VM/desktop venues: record_env: {XDG_RUNTIME_DIR: /run/user/1000,
+	// WAYLAND_DISPLAY: wayland-1}; container defaults are /tmp + wayland-0). Every stated
+	// key overrides the default; extra keys pass through. Values are static strings.
+	record_env?: { [string]: string } @go(RecordEnv,type=map[string]string)
 	// text — the command line `cmd` sends into the recording's tmux session.
 	text?: string
 	// artifact — the host path `stop` copies the recording to.

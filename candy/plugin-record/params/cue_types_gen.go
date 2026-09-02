@@ -45,6 +45,11 @@ type RecordInput struct {
 	// record_audio — capture audio with the desktop recording.
 	RecordAudio bool `yaml:"record_audio,omitempty" json:"record_audio,omitempty"`
 
+	// record_env — extra environment for the recorder process (desktop mode needs the
+	// compositor session on VM/desktop venues: record_env: {XDG_RUNTIME_DIR: /run/user/1000,
+	// WAYLAND_DISPLAY: wayland-1}; container defaults are /tmp + wayland-0).
+	RecordEnv map[string]string `yaml:"record_env,omitempty" json:"record_env,omitempty"`
+
 	// text — the command line `cmd` sends into the recording's tmux session.
 	Text string `yaml:"text,omitempty" json:"text,omitempty"`
 
