@@ -3,6 +3,7 @@ package record
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/opencharly/plugin-record/candy/plugin-record/params"
 	"github.com/opencharly/sdk"
@@ -107,6 +108,23 @@ func TestRecorderEnv(t *testing.T) {
 	}
 }
 
+// TestRunSettle covers the record: run settle-duration contract: the named default
+// (recordRunDefaultSettle) when settle_ms is unset, and the authored override when
+// set. This is the deterministic core of recordRun (the venue-driving send/sleep
+// path is exercised by the R10 bed) — it FAILS without the settle_ms behavior.
+func TestRunSettle(t *testing.T) {
+	defaultWant := recordRunDefaultSettle
+	if got := runSettle(&params.RecordInput{}); got != defaultWant {
+		t.Errorf("runSettle(unset) = %v, want default %v", got, defaultWant)
+	}
+	if got := runSettle(&params.RecordInput{SettleMs: 2000}); got != 2000*time.Millisecond {
+		t.Errorf("runSettle(2000) = %v, want 2000ms", got)
+	}
+	if got := runSettle(&params.RecordInput{SettleMs: 0}); got != defaultWant {
+		t.Errorf("runSettle(0) = %v, want default %v", got, defaultWant)
+	}
+}
+
 // TestRequireModifiers mirrors the in-tree recordMethods Required specs that moved
 // here: `stop` needs an artifact, `cmd` needs the text line; list/start need nothing.
 // The modifiers ride the desugared plugin_input map (op.PluginInput) since the
@@ -123,6 +141,8 @@ func TestRequireModifiers(t *testing.T) {
 		{"stop", spec.Op{PluginInput: map[string]any{"method": "stop", "artifact": "/tmp/x.cast"}}, ""},
 		{"cmd", spec.Op{PluginInput: map[string]any{"method": "cmd"}}, "text"},
 		{"cmd", spec.Op{PluginInput: map[string]any{"method": "cmd", "text": "echo hi"}}, ""},
+		{"run", spec.Op{PluginInput: map[string]any{"method": "run"}}, "text"},
+		{"run", spec.Op{PluginInput: map[string]any{"method": "run", "text": "echo hi"}}, ""},
 	}
 	for _, tc := range cases {
 		err := sdk.RequireModifiers(tc.method, &tc.op, requiredModifiers)

@@ -26,7 +26,7 @@
 #RecordInput: {
 	// method — the record method to dispatch (the former core #RecordMethod
 	// enum; also the scalar-sugar primary: `record: <method>`).
-	method: "list" | "start" | "stop" | "cmd"
+	method: "list" | "start" | "stop" | "cmd" | "run"
 	// record_name — the recording session name (default "default").
 	record_name?: string @go(RecordName)
 	// record_mode — terminal (asciinema) / desktop (pixelflux-record or
@@ -41,8 +41,11 @@
 	// WAYLAND_DISPLAY: wayland-1}; container defaults are /tmp + wayland-0). Every stated
 	// key overrides the default; extra keys pass through. Values are static strings.
 	record_env?: { [string]: string } @go(RecordEnv,type=map[string]string)
-	// text — the command line `cmd` sends into the recording's tmux session.
+	// text — the command line `cmd`/`run` sends into the recording's tmux session.
 	text?: string
+	// settle_ms — how long `run` waits after sending the text before returning
+	// (default 1500). The command's output becomes part of the recording.
+	settle_ms?: int & >=0 @go(SettleMs,type=int)
 	// artifact — the host path `stop` copies the recording to.
 	artifact?: string
 	// artifact_min_bytes / artifact_min_cast_events — the post-run

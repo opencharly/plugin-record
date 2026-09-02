@@ -33,6 +33,19 @@ const recordingDir = "/tmp/charly-recordings"
 // WAYLAND_DISPLAY on a desktop venue — must fail start, not return a false positive).
 const recorderStartGrace = 1500 * time.Millisecond
 
+// recordRunDefaultSettle is how long record: run waits for the command output to
+// settle after sending it (overridable with settle_ms).
+const recordRunDefaultSettle = 1500 * time.Millisecond
+
+// runSettle returns the settle duration for record: run: settle_ms when authored
+// (>0), else the named default. Deterministic core, unit-tested.
+func runSettle(in *params.RecordInput) time.Duration {
+	if in.SettleMs > 0 {
+		return time.Duration(in.SettleMs) * time.Millisecond
+	}
+	return recordRunDefaultSettle
+}
+
 // requiredModifiers mirrors the in-tree recordMethods required-field specs (the host's
 // validate-time + runtime required-modifier check keyed off the former in-proc live-verb seam,
 // which an external verb is not — so the check moves HERE, at dispatch). The strings name
@@ -41,6 +54,7 @@ const recorderStartGrace = 1500 * time.Millisecond
 var requiredModifiers = map[string][]string{
 	"stop": {"artifact"},
 	"cmd":  {"text"},
+	"run":  {"text"},
 }
 
 // dispatch runs one record method against the venue (over the host executor reverse
@@ -63,6 +77,8 @@ func dispatch(ctx context.Context, ex *sdk.Executor, op *spec.Op, in *params.Rec
 		return recordStop(ctx, ex, in)
 	case "cmd":
 		return recordCmd(ctx, ex, in)
+	case "run":
+		return recordRun(ctx, ex, in)
 	}
 	return "", fmt.Errorf("unknown record method %q", method)
 }
@@ -236,6 +252,27 @@ func recordList(ctx context.Context, ex *sdk.Executor) (string, error) {
 		fmt.Fprintf(&b, "%-20s %-10s %s\n", recName, mode, file)
 	}
 	return strings.TrimRight(b.String(), "\n"), nil
+}
+
+// recordRun sends a text line into the recording's tmux session and waits for its output
+// to settle — a convenience replacing the cmd+settle dance for scripted flows (the command
+// and its output become part of the terminal recording). settle_ms overrides the default
+// 1500ms wait; the session is verified alive afterwards (an instant-exit command would
+// otherwise be reported as-run).
+func recordRun(ctx context.Context, ex *sdk.Executor, in *params.RecordInput) (string, error) {
+	name := recordName(in)
+	session := recordSessionName(name)
+	if !tmuxHasSession(ctx, ex, session) {
+		return "", fmt.Errorf("no active recording %q (session %s not found)", name, session)
+	}
+	if err := sendTmuxCommand(ctx, ex, session, in.Text); err != nil {
+		return "", err
+	}
+	time.Sleep(runSettle(in))
+	if !tmuxHasSession(ctx, ex, session) {
+		return "", fmt.Errorf("recording session %s ended during run (the command likely exited the shell)", session)
+	}
+	return fmt.Sprintf("Ran in %s: %s", session, in.Text), nil
 }
 
 // recordCmd sends a text line into the recording's tmux session (it and its output become
