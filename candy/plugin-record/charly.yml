@@ -23,7 +23,13 @@ plugin-record:
             asciinema/wf-recorder commands in-container via tmux and GetFile the produced
             .cast/.mp4 artifact back to the host — it owns no podman / SSH machinery. The R10
             consumer is a desktop pod bed whose check composes this plugin (the
-            sway-browser-vnc bed's `record: start`).
+            sway-browser-vnc bed's `record: start`). Desktop (wf-recorder) recording on a
+            VM/desktop venue needs the compositor session env: author `record_env:` (a
+            string map, e.g. `record_env: {XDG_RUNTIME_DIR: /run/user/1000, WAYLAND_DISPLAY:
+            wayland-1}`) to override the container defaults (/tmp + wayland-0); `record:
+            start` verifies the recorder process is alive after spawn (no false-positive
+            starts), and `record: stop` pulls the artifact host-side before the provider's
+            artifact validators run.
         plugin:
             source: github.com/opencharly/plugin-record/candy/plugin-record
             providers:

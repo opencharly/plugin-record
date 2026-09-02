@@ -63,6 +63,50 @@ func TestRecordFps(t *testing.T) {
 	}
 }
 
+// TestRecorderEnv covers the record_env merge contract for desktop recorders: the
+// container-shaped defaults (XDG_RUNTIME_DIR=/tmp, WAYLAND_DISPLAY=wayland-0) apply
+// when unset, authored values override them, extra keys pass through, and the env
+// string is deterministic (sorted keys, shellquoted values).
+func TestRecorderEnv(t *testing.T) {
+	cases := []struct {
+		name string
+		in   *params.RecordInput
+		want []string // substrings, in any order, of the built env prefix
+		not  []string // substrings that must NOT appear
+	}{
+		{"empty defaults", &params.RecordInput{},
+			[]string{"env ", "XDG_RUNTIME_DIR='/tmp'", "WAYLAND_DISPLAY='wayland-0'"},
+			nil},
+		{"authored overrides", &params.RecordInput{RecordEnv: map[string]string{"XDG_RUNTIME_DIR": "/run/user/1000", "WAYLAND_DISPLAY": "wayland-1"}},
+			[]string{"XDG_RUNTIME_DIR='/run/user/1000'", "WAYLAND_DISPLAY='wayland-1'"},
+			[]string{"'/tmp'", "wayland-0"}},
+		{"extra keys pass through", &params.RecordInput{RecordEnv: map[string]string{"MY_REC_EXTRA": "x"}},
+			[]string{"MY_REC_EXTRA='x'", "XDG_RUNTIME_DIR='/tmp'"},
+			nil},
+	}
+	for _, tc := range cases {
+		got := recorderEnv(tc.in)
+		for _, want := range tc.want {
+			if !strings.Contains(got, want) {
+				t.Errorf("%s: recorderEnv missing %q in %q", tc.name, want, got)
+			}
+		}
+		for _, n := range tc.not {
+			if strings.Contains(got, n) {
+				t.Errorf("%s: recorderEnv unexpectedly contains %q in %q", tc.name, n, got)
+			}
+		}
+		if !strings.HasPrefix(got, "env ") {
+			t.Errorf("%s: recorderEnv must start with the env prefix, got %q", tc.name, got)
+		}
+	}
+	// determinism: same input, same output
+	in := &params.RecordInput{RecordEnv: map[string]string{"B": "2", "A": "1"}}
+	if recorderEnv(in) != recorderEnv(in) {
+		t.Errorf("recorderEnv is not deterministic for map input")
+	}
+}
+
 // TestRequireModifiers mirrors the in-tree recordMethods Required specs that moved
 // here: `stop` needs an artifact, `cmd` needs the text line; list/start need nothing.
 // The modifiers ride the desugared plugin_input map (op.PluginInput) since the

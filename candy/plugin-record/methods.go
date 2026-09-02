@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -25,6 +26,12 @@ import (
 // in-tree verb passes unchanged.
 
 const recordingDir = "/tmp/charly-recordings"
+
+// recorderStartGrace is how long record: start waits after spawning the recorder's
+// tmux session before verifying the session and recorder process are alive (an
+// instant-exit recorder — e.g. wf-recorder with the wrong XDG_RUNTIME_DIR/
+// WAYLAND_DISPLAY on a desktop venue — must fail start, not return a false positive).
+const recorderStartGrace = 1500 * time.Millisecond
 
 // requiredModifiers mirrors the in-tree recordMethods required-field specs (the host's
 // validate-time + runtime required-modifier check keyed off the former in-proc live-verb seam,
@@ -94,9 +101,7 @@ func recordStart(ctx context.Context, ex *sdk.Executor, in *params.RecordInput) 
 			recorderCmd += " --audio"
 		}
 	case "wf-recorder":
-		recorderCmd = fmt.Sprintf(
-			"env XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/tmp} WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-wayland-0} wf-recorder -f %s",
-			shellquote.ShellQuote(outFile))
+		recorderCmd = fmt.Sprintf("%s wf-recorder -f %s", recorderEnv(in), shellquote.ShellQuote(outFile))
 		if in.RecordAudio {
 			recorderCmd += " --audio"
 		}
@@ -108,7 +113,54 @@ func recordStart(ctx context.Context, ex *sdk.Executor, in *params.RecordInput) 
 	// Write mode metadata for stop (best-effort).
 	modeFile := recordingDir + "/" + name + ".mode"
 	_ = ex.VenueRunSilent(ctx, fmt.Sprintf("printf '%%s' %s > %s", shellquote.ShellQuote(mode), shellquote.ShellQuote(modeFile)))
+	// Post-start verification: the recorder must still be alive (and its session
+	// present) shortly after the tmux spawn. A recorder that exits instantly — e.g.
+	// wf-recorder with the wrong XDG_RUNTIME_DIR/WAYLAND_DISPLAY on a VM/desktop
+	// venue — would otherwise report a false-positive "Recording started" that a
+	// later stop can never complete.
+	time.Sleep(recorderStartGrace)
+	if !tmuxHasSession(ctx, ex, session) {
+		return "", fmt.Errorf("recording session %s exited immediately after start (tool %s); on desktop venues check record_env (XDG_RUNTIME_DIR/WAYLAND_DISPLAY) matches the logged-in session", session, tool)
+	}
+	aliveProcs := map[string]string{
+		"asciinema":        "asciinema",
+		"wf-recorder":      "wf-recorder",
+		"pixelflux-record": "pixelflux-record",
+	}
+	proc := aliveProcs[tool]
+	if err := ex.VenueRunSilent(ctx, "pgrep -x "+shellquote.ShellQuote(proc)); err != nil {
+		_ = execTmux(ctx, ex, "kill-session", "-t", session)
+		return "", fmt.Errorf("recorder process %s is not running after start (session %s); on desktop venues check record_env (XDG_RUNTIME_DIR/WAYLAND_DISPLAY) and the recorder tool", proc, session)
+	}
 	return fmt.Sprintf("Recording started (mode: %s, tool: %s, session: %s); output: %s", mode, tool, session, outFile), nil
+}
+
+// recorderEnv builds the `env K=V K=V ...` prefix for the recorder command from
+// record_env (authored) merged over the container-shaped defaults (XDG_RUNTIME_DIR=/tmp,
+// WAYLAND_DISPLAY=wayland-0). On VM/desktop venues the compositor session runs as the
+// logged-in user (e.g. /run/user/1000 + wayland-1) — state them via record_env so the
+// recorder attaches to the real display. Values are shellquoted; output is deterministic.
+func recorderEnv(in *params.RecordInput) string {
+	env := make(map[string]string, len(in.RecordEnv)+2)
+	for k, v := range in.RecordEnv {
+		env[k] = v
+	}
+	if _, ok := env["XDG_RUNTIME_DIR"]; !ok {
+		env["XDG_RUNTIME_DIR"] = "/tmp"
+	}
+	if _, ok := env["WAYLAND_DISPLAY"]; !ok {
+		env["WAYLAND_DISPLAY"] = "wayland-0"
+	}
+	keys := make([]string, 0, len(env))
+	for k := range env {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, k+"="+shellquote.ShellQuote(env[k]))
+	}
+	return "env " + strings.Join(parts, " ")
 }
 
 // recordStop stops a recording session, copies the produced recording off the venue, and
