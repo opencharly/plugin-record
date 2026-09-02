@@ -50,8 +50,12 @@ type RecordInput struct {
 	// WAYLAND_DISPLAY: wayland-1}; container defaults are /tmp + wayland-0).
 	RecordEnv map[string]string `yaml:"record_env,omitempty" json:"record_env,omitempty"`
 
-	// text — the command line `cmd` sends into the recording's tmux session.
+	// text — the command line `cmd`/`run` sends into the recording's tmux session.
 	Text string `yaml:"text,omitempty" json:"text,omitempty"`
+
+	// settle_ms — how long `run` waits after sending the text before returning
+	// (default 1500).
+	SettleMs int `yaml:"settle_ms,omitempty" json:"settle_ms,omitempty"`
 
 	// artifact — the host path `stop` copies the recording to.
 	Artifact string `yaml:"artifact,omitempty" json:"artifact,omitempty"`
