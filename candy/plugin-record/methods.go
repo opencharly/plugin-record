@@ -37,6 +37,15 @@ const recorderStartGrace = 1500 * time.Millisecond
 // settle after sending it (overridable with settle_ms).
 const recordRunDefaultSettle = 1500 * time.Millisecond
 
+// runSettle returns the settle duration for record: run: settle_ms when authored
+// (>0), else the named default. Deterministic core, unit-tested.
+func runSettle(in *params.RecordInput) time.Duration {
+	if in.SettleMs > 0 {
+		return time.Duration(in.SettleMs) * time.Millisecond
+	}
+	return recordRunDefaultSettle
+}
+
 // requiredModifiers mirrors the in-tree recordMethods required-field specs (the host's
 // validate-time + runtime required-modifier check keyed off the former in-proc live-verb seam,
 // which an external verb is not — so the check moves HERE, at dispatch). The strings name
@@ -259,11 +268,7 @@ func recordRun(ctx context.Context, ex *sdk.Executor, in *params.RecordInput) (s
 	if err := sendTmuxCommand(ctx, ex, session, in.Text); err != nil {
 		return "", err
 	}
-	settle := recordRunDefaultSettle
-	if in.SettleMs > 0 {
-		settle = time.Duration(in.SettleMs) * time.Millisecond
-	}
-	time.Sleep(settle)
+	time.Sleep(runSettle(in))
 	if !tmuxHasSession(ctx, ex, session) {
 		return "", fmt.Errorf("recording session %s ended during run (the command likely exited the shell)", session)
 	}

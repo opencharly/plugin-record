@@ -13,7 +13,8 @@ plugin-record:
             EXEC-based kind, after the PORT-based candy/plugin-mcp/spice/kube). Since the
             schema-compaction cutover an authored `record:` step desugars to the internal
             plugin/plugin_input envelope, and every record-exclusive modifier
-            (method/record_name/record_mode/record_fps/record_audio/text/artifact) lives
+            (method/record_name/record_mode/record_fps/record_audio/text/artifact/settle_ms — `record: run`
+            sends a command into the recording and waits for its output to settle) lives
             in the plugin's OWN #RecordInput (schema/record.cue); the verb dispatches
             through the provider registry exactly
             like a built-in (ResolveVerb → grpcProvider → invokeVerbProvider hands it the
