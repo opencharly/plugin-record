@@ -27,6 +27,12 @@ import (
 
 const recordingDir = "/tmp/charly-recordings"
 
+// recorderStartGrace is how long record: start waits after spawning the recorder's
+// tmux session before verifying the session and recorder process are alive (an
+// instant-exit recorder — e.g. wf-recorder with the wrong XDG_RUNTIME_DIR/
+// WAYLAND_DISPLAY on a desktop venue — must fail start, not return a false positive).
+const recorderStartGrace = 1500 * time.Millisecond
+
 // requiredModifiers mirrors the in-tree recordMethods required-field specs (the host's
 // validate-time + runtime required-modifier check keyed off the former in-proc live-verb seam,
 // which an external verb is not — so the check moves HERE, at dispatch). The strings name
@@ -112,7 +118,7 @@ func recordStart(ctx context.Context, ex *sdk.Executor, in *params.RecordInput) 
 	// wf-recorder with the wrong XDG_RUNTIME_DIR/WAYLAND_DISPLAY on a VM/desktop
 	// venue — would otherwise report a false-positive "Recording started" that a
 	// later stop can never complete.
-	time.Sleep(1500 * time.Millisecond)
+	time.Sleep(recorderStartGrace)
 	if !tmuxHasSession(ctx, ex, session) {
 		return "", fmt.Errorf("recording session %s exited immediately after start (tool %s); on desktop venues check record_env (XDG_RUNTIME_DIR/WAYLAND_DISPLAY) matches the logged-in session", session, tool)
 	}
