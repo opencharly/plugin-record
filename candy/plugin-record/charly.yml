@@ -5,7 +5,7 @@ plugin-record:
         description: |-
             OUT-OF-TREE charly plugin serving the `record` live-container check verb — a
             standalone Go module (go.mod + main.go) that manages recording sessions inside a
-            running deployment (list, start, stop, cmd) over go-plugin gRPC via the charly
+            running deployment (list, start, stop, cmd, gif) over go-plugin gRPC via the charly
             plugin SDK (github.com/opencharly/sdk). charly's loader fetches this candy's repo,
             go-builds the provider binary on the HOST, and serves it OUT-OF-PROCESS via
             LocalTransport — so the asciinema/wf-recorder/pixelflux recording driver lives
@@ -30,7 +30,11 @@ plugin-record:
             wayland-1}`) to override the container defaults (/tmp + wayland-0); `record:
             start` verifies the recorder process is alive after spawn (no false-positive
             starts), and `record: stop` pulls the artifact host-side before the provider's
-            artifact validators run.
+            artifact validators run. `record: gif` renders a STOPPED terminal recording
+            (.cast) to an animated GIF with agg (asciinema/agg — installed by the asciinema
+            candy, which also ships a monospace font) and pulls the .gif to the artifact
+            path; the agg options (theme/font_size/speed/idle_time_limit/fps_cap/select/
+            cols/rows/no_loop/last_frame_duration/renderer) map 1:1 to agg's CLI flags.
         plugin:
             source: github.com/opencharly/plugin-record/candy/plugin-record
             providers:

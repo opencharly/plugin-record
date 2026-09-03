@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -55,6 +56,7 @@ var requiredModifiers = map[string][]string{
 	"stop": {"artifact"},
 	"cmd":  {"text"},
 	"run":  {"text"},
+	"gif":  {"artifact"},
 }
 
 // dispatch runs one record method against the venue (over the host executor reverse
@@ -79,6 +81,8 @@ func dispatch(ctx context.Context, ex *sdk.Executor, op *spec.Op, in *params.Rec
 		return recordCmd(ctx, ex, in)
 	case "run":
 		return recordRun(ctx, ex, in)
+	case "gif":
+		return recordGif(ctx, ex, in)
 	}
 	return "", fmt.Errorf("unknown record method %q", method)
 }
@@ -288,6 +292,83 @@ func recordCmd(ctx context.Context, ex *sdk.Executor, in *params.RecordInput) (s
 		return "", err
 	}
 	return fmt.Sprintf("Sent to %s: %s", session, in.Text), nil
+}
+
+// recordGif renders a STOPPED terminal recording (.cast) to an animated GIF with agg
+// (asciinema/agg, installed by the asciinema candy) and copies the .gif to the input's
+// artifact path (the host path), so the provider's RunArtifactValidators can read it —
+// the same GetFile-pull shape as recordStop. The .cast must exist on the venue (a
+// terminal recording that was started and stopped); the artifact requirement is enforced
+// by sdk.RequireModifiers before dispatch. agg options ride the typed input (theme,
+// font_size, speed, idle_time_limit, fps_cap, select, cols, rows, no_loop,
+// last_frame_duration, renderer) and map 1:1 to agg's CLI flags.
+func recordGif(ctx context.Context, ex *sdk.Executor, in *params.RecordInput) (string, error) {
+	name := recordName(in)
+	castFile := recordingFilePath(name, "terminal")
+	// The .cast must be present on the venue — a recording that was started and
+	// stopped (recordStop leaves the venue file in place after pulling a copy out).
+	if err := ex.VenueRunSilent(ctx, "test -f "+shellquote.ShellQuote(castFile)); err != nil {
+		return "", fmt.Errorf("no terminal recording %q at %s (start and stop a terminal recording first)", name, castFile)
+	}
+	if !ex.VenueHasTool(ctx, "agg") {
+		return "", fmt.Errorf("gif conversion requires agg (add the asciinema candy, which installs agg and a monospace font)")
+	}
+	gifFile := recordingDir + "/" + name + ".gif"
+	cmd := "agg " + aggArgs(in) + " " + shellquote.ShellQuote(castFile) + " " + shellquote.ShellQuote(gifFile)
+	if err := ex.VenueRunSilent(ctx, cmd); err != nil {
+		return "", fmt.Errorf("agg conversion failed: %w", err)
+	}
+	data, err := ex.GetFile(ctx, gifFile, false)
+	if err != nil {
+		return "", fmt.Errorf("copying gif: %w (file: %s)", err, gifFile)
+	}
+	if err := os.WriteFile(in.Artifact, data, 0o644); err != nil {
+		return "", fmt.Errorf("writing gif to %s: %w", in.Artifact, err)
+	}
+	return fmt.Sprintf("GIF rendered from %s: %d bytes written to %s", castFile, len(data), in.Artifact), nil
+}
+
+// aggArgs builds the agg CLI option prefix from the typed input. Every option maps 1:1
+// to an agg flag (--theme/--font-size/--speed/--idle-time-limit/--fps-cap/--select/
+// --cols/--rows/--no-loop/--last-frame-duration/--renderer); unset options are omitted
+// so agg's own defaults (and the recording's embedded theme) apply. Values are
+// shellquoted; output is deterministic (fixed option order).
+func aggArgs(in *params.RecordInput) string {
+	var args []string
+	if in.Theme != "" {
+		args = append(args, "--theme", shellquote.ShellQuote(in.Theme))
+	}
+	if in.FontSize > 0 {
+		args = append(args, "--font-size", strconv.Itoa(in.FontSize))
+	}
+	if in.Speed > 0 {
+		args = append(args, "--speed", strconv.FormatFloat(in.Speed, 'f', -1, 64))
+	}
+	if in.IdleTimeLimit > 0 {
+		args = append(args, "--idle-time-limit", strconv.Itoa(in.IdleTimeLimit))
+	}
+	if in.FpsCap > 0 {
+		args = append(args, "--fps-cap", strconv.Itoa(in.FpsCap))
+	}
+	if in.Select != "" {
+		args = append(args, "--select", shellquote.ShellQuote(in.Select))
+	}
+	if in.Cols > 0 {
+		args = append(args, "--cols", strconv.Itoa(in.Cols))
+	}
+	if in.Rows > 0 {
+		args = append(args, "--rows", strconv.Itoa(in.Rows))
+	}
+	if in.NoLoop {
+		args = append(args, "--no-loop")
+	}
+	if in.LastFrameDuration > 0 {
+		args = append(args, "--last-frame-duration", strconv.Itoa(in.LastFrameDuration))
+	}
+	if in.Renderer != "" {
+		args = append(args, "--renderer", shellquote.ShellQuote(in.Renderer))
+	}
+	return strings.Join(args, " ")
 }
 
 // ---------------------------------------------------------------------------
