@@ -125,6 +125,45 @@ func TestRunSettle(t *testing.T) {
 	}
 }
 
+// TestAggArgs covers the agg CLI option builder for record: gif: unset options are
+// omitted (agg's own defaults + the recording's embedded theme apply), every set
+// option maps to its agg flag with a shellquoted value, and the output is
+// deterministic (fixed option order). This is the deterministic core of recordGif
+// (the venue-driving agg run + GetFile pull is exercised by the R10 bed).
+func TestAggArgs(t *testing.T) {
+	cases := []struct {
+		name string
+		in   *params.RecordInput
+		want string // exact expected arg prefix
+	}{
+		{"empty", &params.RecordInput{}, ""},
+		{"theme only", &params.RecordInput{Theme: "monokai"}, "--theme 'monokai'"},
+		{"font size", &params.RecordInput{FontSize: 20}, "--font-size 20"},
+		{"speed int", &params.RecordInput{Speed: 2}, "--speed 2"},
+		{"speed float", &params.RecordInput{Speed: 0.5}, "--speed 0.5"},
+		{"idle limit", &params.RecordInput{IdleTimeLimit: 1}, "--idle-time-limit 1"},
+		{"fps cap", &params.RecordInput{FpsCap: 15}, "--fps-cap 15"},
+		{"select range", &params.RecordInput{Select: "5..30"}, "--select '5..30'"},
+		{"select marker", &params.RecordInput{Select: "marker:build..marker:test"}, "--select 'marker:build..marker:test'"},
+		{"geometry", &params.RecordInput{Cols: 100, Rows: 30}, "--cols 100 --rows 30"},
+		{"no loop", &params.RecordInput{NoLoop: true}, "--no-loop"},
+		{"last frame", &params.RecordInput{LastFrameDuration: 2}, "--last-frame-duration 2"},
+		{"renderer", &params.RecordInput{Renderer: "resvg"}, "--renderer 'resvg'"},
+		{"full", &params.RecordInput{Theme: "dracula", FontSize: 20, Speed: 2, IdleTimeLimit: 1, FpsCap: 15, Select: "5..30", Cols: 100, Rows: 30, NoLoop: true, LastFrameDuration: 2, Renderer: "resvg"},
+			"--theme 'dracula' --font-size 20 --speed 2 --idle-time-limit 1 --fps-cap 15 --select '5..30' --cols 100 --rows 30 --no-loop --last-frame-duration 2 --renderer 'resvg'"},
+	}
+	for _, tc := range cases {
+		if got := aggArgs(tc.in); got != tc.want {
+			t.Errorf("%s: aggArgs = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+	// determinism: same input, same output
+	in := &params.RecordInput{Theme: "monokai", Speed: 2, NoLoop: true}
+	if aggArgs(in) != aggArgs(in) {
+		t.Errorf("aggArgs is not deterministic")
+	}
+}
+
 // TestRequireModifiers mirrors the in-tree recordMethods Required specs that moved
 // here: `stop` needs an artifact, `cmd` needs the text line; list/start need nothing.
 // The modifiers ride the desugared plugin_input map (op.PluginInput) since the
@@ -143,6 +182,8 @@ func TestRequireModifiers(t *testing.T) {
 		{"cmd", spec.Op{PluginInput: map[string]any{"method": "cmd", "text": "echo hi"}}, ""},
 		{"run", spec.Op{PluginInput: map[string]any{"method": "run"}}, "text"},
 		{"run", spec.Op{PluginInput: map[string]any{"method": "run", "text": "echo hi"}}, ""},
+		{"gif", spec.Op{PluginInput: map[string]any{"method": "gif"}}, "artifact"},
+		{"gif", spec.Op{PluginInput: map[string]any{"method": "gif", "artifact": "/tmp/x.gif"}}, ""},
 	}
 	for _, tc := range cases {
 		err := sdk.RequireModifiers(tc.method, &tc.op, requiredModifiers)

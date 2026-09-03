@@ -47,17 +47,19 @@ type RecordInput struct {
 
 	// record_env — extra environment for the recorder process (desktop mode needs the
 	// compositor session on VM/desktop venues: record_env: {XDG_RUNTIME_DIR: /run/user/1000,
-	// WAYLAND_DISPLAY: wayland-1}; container defaults are /tmp + wayland-0).
+	// WAYLAND_DISPLAY: wayland-1}; container defaults are /tmp + wayland-0). Every stated
+	// key overrides the default; extra keys pass through. Values are static strings.
 	RecordEnv map[string]string `yaml:"record_env,omitempty" json:"record_env,omitempty"`
 
 	// text — the command line `cmd`/`run` sends into the recording's tmux session.
 	Text string `yaml:"text,omitempty" json:"text,omitempty"`
 
 	// settle_ms — how long `run` waits after sending the text before returning
-	// (default 1500).
+	// (default 1500). The command's output becomes part of the recording.
 	SettleMs int `yaml:"settle_ms,omitempty" json:"settle_ms,omitempty"`
 
-	// artifact — the host path `stop` copies the recording to.
+	// artifact — the host path `stop` copies the recording to, and `gif`
+	// copies the rendered .gif to.
 	Artifact string `yaml:"artifact,omitempty" json:"artifact,omitempty"`
 
 	// artifact_min_bytes / artifact_min_cast_events — the post-run
@@ -65,4 +67,42 @@ type RecordInput struct {
 	ArtifactMinBytes int `yaml:"artifact_min_bytes,omitempty" json:"artifact_min_bytes,omitempty"`
 
 	ArtifactMinCastEvents int `yaml:"artifact_min_cast_events,omitempty" json:"artifact_min_cast_events,omitempty"`
+
+	// --- gif method (agg) — render a stopped terminal recording to an animated GIF ---
+	// theme — agg color theme (asciinema, dracula, monokai, github-dark,
+	// solarized-dark, ...); empty uses the recording's embedded theme when present.
+	Theme string `yaml:"theme,omitempty" json:"theme,omitempty"`
+
+	// font_size — agg font size in px (default 16).
+	FontSize int `yaml:"font_size,omitempty" json:"font_size,omitempty"`
+
+	// speed — agg playback speed multiplier (default 1; >1 speeds up, <1 slows down).
+	Speed float64 `yaml:"speed,omitempty" json:"speed,omitempty"`
+
+	// idle_time_limit — agg cap on any single inactive period, in seconds
+	// (default 5), so long pauses don't bloat the GIF.
+	IdleTimeLimit int `yaml:"idle_time_limit,omitempty" json:"idle_time_limit,omitempty"`
+
+	// fps_cap — agg maximum GIF frame rate (default 30); lower values produce
+	// smaller files at the cost of motion smoothness.
+	FpsCap int `yaml:"fps_cap,omitempty" json:"fps_cap,omitempty"`
+
+	// select — agg frame selection (e.g. "5..30", "50%", "marker:build..marker:test",
+	// "12.5"); renders only part of the recording or discrete terminal states.
+	Select string `yaml:"select,omitempty" json:"select,omitempty"`
+
+	// cols / rows — agg terminal size override (re-render at a different geometry).
+	Cols int `yaml:"cols,omitempty" json:"cols,omitempty"`
+
+	Rows int `yaml:"rows,omitempty" json:"rows,omitempty"`
+
+	// no_loop — agg plays the GIF once instead of looping forever.
+	NoLoop bool `yaml:"no_loop,omitempty" json:"no_loop,omitempty"`
+
+	// last_frame_duration — agg holds the final frame for this many seconds
+	// (default 3) before the GIF loops or ends.
+	LastFrameDuration int `yaml:"last_frame_duration,omitempty" json:"last_frame_duration,omitempty"`
+
+	// renderer — agg rendering backend: "swash" (default) or "resvg".
+	Renderer string `yaml:"renderer,omitempty" json:"renderer,omitempty"`
 }
