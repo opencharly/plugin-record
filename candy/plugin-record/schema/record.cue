@@ -49,6 +49,9 @@
 	// artifact — the host path `stop` copies the recording to, and `gif`
 	// copies the rendered .gif to.
 	artifact?: string
+	// artifact_dir — the runner-injected generic evidence-artifact dir (verb-agnostic);
+	// session stop derives the .cast target from it when artifact is unset.
+	artifact_dir?: string @go(ArtifactDir)
 	// artifact_min_bytes / artifact_min_cast_events — the post-run
 	// artifact-reality assertions (sdk.RunArtifactValidators).
 	artifact_min_bytes?:       int & >=0 @go(ArtifactMinBytes,type=int)
@@ -94,6 +97,7 @@
 	// state_dir — the run's state directory; stop writes the instrument evidence
 	// row (<state_dir>/row.json) here.
 	state_dir?: string @go(StateDir)
+	log_dir?:  string @go(LogDir)
 	// venue — the venue the session runs on (evidence-row provenance).
 	venue?: string @go(Venue)
 	// phase — the instrument phase bracket (evidence-row provenance).

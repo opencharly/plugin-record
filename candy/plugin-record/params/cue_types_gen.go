@@ -61,6 +61,7 @@ type RecordInput struct {
 	// artifact — the host path `stop` copies the recording to, and `gif`
 	// copies the rendered .gif to.
 	Artifact string `yaml:"artifact,omitempty" json:"artifact,omitempty"`
+	ArtifactDir string `yaml:"artifact_dir,omitempty" json:"artifact_dir,omitempty"`
 
 	// artifact_min_bytes / artifact_min_cast_events — the post-run
 	// artifact-reality assertions (sdk.RunArtifactValidators).
