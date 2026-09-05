@@ -30,101 +30,106 @@ package params
 type RecordInput struct {
 	// method — the record method to dispatch (the former core #RecordMethod
 	// enum; also the scalar-sugar primary: `record: <method>`).
-	Method string `yaml:"method,omitempty" json:"method"`
+	Method string `json:"method" yaml:"method,omitempty"`
 
 	// record_name — the recording session name (default "default").
-	RecordName string `yaml:"record_name,omitempty" json:"record_name,omitempty"`
+	RecordName string `json:"record_name,omitempty" yaml:"record_name,omitempty,omitempty"`
 
 	// record_mode — terminal (asciinema) / desktop (pixelflux-record or
 	// wf-recorder); empty means auto-detect from the venue's tools.
-	RecordMode string `yaml:"record_mode,omitempty" json:"record_mode,omitempty"`
+	RecordMode string `json:"record_mode,omitempty" yaml:"record_mode,omitempty,omitempty"`
 
 	// record_fps — the desktop-recorder frame rate (default 30).
-	RecordFps int `yaml:"record_fps,omitempty" json:"record_fps,omitempty"`
+	RecordFps int `json:"record_fps,omitempty" yaml:"record_fps,omitempty,omitempty"`
 
 	// record_audio — capture audio with the desktop recording.
-	RecordAudio bool `yaml:"record_audio,omitempty" json:"record_audio,omitempty"`
+	RecordAudio bool `json:"record_audio,omitempty" yaml:"record_audio,omitempty,omitempty"`
 
 	// record_env — extra environment for the recorder process (desktop mode needs the
 	// compositor session on VM/desktop venues: record_env: {XDG_RUNTIME_DIR: /run/user/1000,
 	// WAYLAND_DISPLAY: wayland-1}; container defaults are /tmp + wayland-0). Every stated
 	// key overrides the default; extra keys pass through. Values are static strings.
-	RecordEnv map[string]string `yaml:"record_env,omitempty" json:"record_env,omitempty"`
+	RecordEnv map[string]string `json:"record_env,omitempty" yaml:"record_env,omitempty,omitempty"`
 
 	// text — the command line `cmd`/`run` sends into the recording's tmux session.
-	Text string `yaml:"text,omitempty" json:"text,omitempty"`
+	Text string `json:"text,omitempty" yaml:"text,omitempty,omitempty"`
 
 	// settle_ms — how long `run` waits after sending the text before returning
 	// (default 1500). The command's output becomes part of the recording.
-	SettleMs int `yaml:"settle_ms,omitempty" json:"settle_ms,omitempty"`
+	SettleMs int `json:"settle_ms,omitempty" yaml:"settle_ms,omitempty,omitempty"`
 
 	// artifact — the host path `stop` copies the recording to, and `gif`
 	// copies the rendered .gif to.
-	Artifact string `yaml:"artifact,omitempty" json:"artifact,omitempty"`
-	ArtifactDir string `yaml:"artifact_dir,omitempty" json:"artifact_dir,omitempty"`
+	Artifact string `json:"artifact,omitempty" yaml:"artifact,omitempty,omitempty"`
+
+	// artifact_dir — the runner-injected generic evidence-artifact dir (verb-agnostic);
+	// session stop derives the .cast target from it when artifact is unset.
+	ArtifactDir string `json:"artifact_dir,omitempty" yaml:"artifact_dir,omitempty,omitempty"`
 
 	// artifact_min_bytes / artifact_min_cast_events — the post-run
 	// artifact-reality assertions (sdk.RunArtifactValidators).
-	ArtifactMinBytes int `yaml:"artifact_min_bytes,omitempty" json:"artifact_min_bytes,omitempty"`
+	ArtifactMinBytes int `json:"artifact_min_bytes,omitempty" yaml:"artifact_min_bytes,omitempty,omitempty"`
 
-	ArtifactMinCastEvents int `yaml:"artifact_min_cast_events,omitempty" json:"artifact_min_cast_events,omitempty"`
+	ArtifactMinCastEvents int `json:"artifact_min_cast_events,omitempty" yaml:"artifact_min_cast_events,omitempty,omitempty"`
 
 	// --- gif method (agg) — render a stopped terminal recording to an animated GIF ---
 	// theme — agg color theme (asciinema, dracula, monokai, github-dark,
 	// solarized-dark, ...); empty uses the recording's embedded theme when present.
-	Theme string `yaml:"theme,omitempty" json:"theme,omitempty"`
+	Theme string `json:"theme,omitempty" yaml:"theme,omitempty,omitempty"`
 
 	// font_size — agg font size in px (default 16).
-	FontSize int `yaml:"font_size,omitempty" json:"font_size,omitempty"`
+	FontSize int `json:"font_size,omitempty" yaml:"font_size,omitempty,omitempty"`
 
 	// speed — agg playback speed multiplier (default 1; >1 speeds up, <1 slows down).
-	Speed float64 `yaml:"speed,omitempty" json:"speed,omitempty"`
+	Speed float64 `json:"speed,omitempty" yaml:"speed,omitempty,omitempty"`
 
 	// idle_time_limit — agg cap on any single inactive period, in seconds
 	// (default 5), so long pauses don't bloat the GIF.
-	IdleTimeLimit int `yaml:"idle_time_limit,omitempty" json:"idle_time_limit,omitempty"`
+	IdleTimeLimit int `json:"idle_time_limit,omitempty" yaml:"idle_time_limit,omitempty,omitempty"`
 
 	// fps_cap — agg maximum GIF frame rate (default 30); lower values produce
 	// smaller files at the cost of motion smoothness.
-	FpsCap int `yaml:"fps_cap,omitempty" json:"fps_cap,omitempty"`
+	FpsCap int `json:"fps_cap,omitempty" yaml:"fps_cap,omitempty,omitempty"`
 
 	// select — agg frame selection (e.g. "5..30", "50%", "marker:build..marker:test",
 	// "12.5"); renders only part of the recording or discrete terminal states.
-	Select string `yaml:"select,omitempty" json:"select,omitempty"`
+	Select string `json:"select,omitempty" yaml:"select,omitempty,omitempty"`
 
 	// cols / rows — agg terminal size override (re-render at a different geometry).
-	Cols int `yaml:"cols,omitempty" json:"cols,omitempty"`
+	Cols int `json:"cols,omitempty" yaml:"cols,omitempty,omitempty"`
 
-	Rows int `yaml:"rows,omitempty" json:"rows,omitempty"`
+	Rows int `json:"rows,omitempty" yaml:"rows,omitempty,omitempty"`
 
 	// no_loop — agg plays the GIF once instead of looping forever.
-	NoLoop bool `yaml:"no_loop,omitempty" json:"no_loop,omitempty"`
+	NoLoop bool `json:"no_loop,omitempty" yaml:"no_loop,omitempty,omitempty"`
 
 	// last_frame_duration — agg holds the final frame for this many seconds
 	// (default 3) before the GIF loops or ends.
-	LastFrameDuration int `yaml:"last_frame_duration,omitempty" json:"last_frame_duration,omitempty"`
+	LastFrameDuration int `json:"last_frame_duration,omitempty" yaml:"last_frame_duration,omitempty,omitempty"`
 
 	// renderer — agg rendering backend: "swash" (default) or "resvg".
-	Renderer string `yaml:"renderer,omitempty" json:"renderer,omitempty"`
+	Renderer string `json:"renderer,omitempty" yaml:"renderer,omitempty,omitempty"`
 
 	// --- session method (Cutover A instrument model — venue-side session; the
 	// tmux transport IS the session, already invocation-surviving) ---
 	// action — the session lifecycle action (start/stop/status); empty means start
 	// (the default lifecycle action, mirroring the instrument phase bracket).
-	Action string `yaml:"action,omitempty" json:"action,omitempty"`
+	Action string `json:"action,omitempty" yaml:"action,omitempty,omitempty"`
 
 	// session_id — the venue-scoped session identity. When set it BECOMES the
 	// record_name (tmux session names must not collide across venues); falls back
 	// to record_name when empty.
-	SessionId string `yaml:"session_id,omitempty" json:"session_id,omitempty"`
+	SessionId string `json:"session_id,omitempty" yaml:"session_id,omitempty,omitempty"`
 
 	// state_dir — the run's state directory; stop writes the instrument evidence
 	// row (<state_dir>/row.json) here.
-	StateDir string `yaml:"state_dir,omitempty" json:"state_dir,omitempty"`
+	StateDir string `json:"state_dir,omitempty" yaml:"state_dir,omitempty,omitempty"`
+
+	LogDir string `json:"log_dir,omitempty" yaml:"log_dir,omitempty,omitempty"`
 
 	// venue — the venue the session runs on (evidence-row provenance).
-	Venue string `yaml:"venue,omitempty" json:"venue,omitempty"`
+	Venue string `json:"venue,omitempty" yaml:"venue,omitempty,omitempty"`
 
 	// phase — the instrument phase bracket (evidence-row provenance).
-	Phase string `yaml:"phase,omitempty" json:"phase,omitempty"`
+	Phase string `json:"phase,omitempty" yaml:"phase,omitempty,omitempty"`
 }
