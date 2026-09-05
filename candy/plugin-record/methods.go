@@ -2,8 +2,10 @@ package record
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -83,8 +85,154 @@ func dispatch(ctx context.Context, ex *sdk.Executor, op *spec.Op, in *params.Rec
 		return recordRun(ctx, ex, in)
 	case "gif":
 		return recordGif(ctx, ex, in)
+	case "session":
+		return sessionDispatch(ctx, ex, in)
 	}
 	return "", fmt.Errorf("unknown record method %q", method)
+}
+
+// ---------------------------------------------------------------------------
+// session method — the venue-side session arm of the Cutover A instrument model
+// ---------------------------------------------------------------------------
+
+// sanitizeSessionName makes a venue-scoped session id usable as a tmux target name:
+// tmux target syntax parses a dot as a session.window separator, so the venue-scoped
+// id <bed>.<member>.<id> MUST be sanitized before it becomes the tmux session name
+// (the evidence row keeps the REAL id). Mirrors the service-side SanitizeUnitName rule.
+func sanitizeSessionName(name string) string {
+	var b strings.Builder
+	b.Grow(len(name))
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_', r == '-':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('-')
+		}
+	}
+	if b.Len() == 0 {
+		return "session"
+	}
+	return b.String()
+}
+
+// sessionDispatch implements the record session method — the venue-side session of the
+// nested-capture instrument model. A record session's tmux session IS its transport
+// (already invocation-surviving), so the work reuses the existing record methods and
+// only adds the instrument evidence row on stop.
+//
+// The record_name for a session must be the VENUE-SCOPED session_id — tmux session
+// names must not collide across venues — so a session identity (session_id) becomes
+// the record name (falling back to record_name when unset) and the tmux session is
+// recordSessionName(that), exactly like a plain record: start.
+func sessionDispatch(ctx context.Context, ex *sdk.Executor, in *params.RecordInput) (string, error) {
+	name := in.RecordName
+	if in.SessionId != "" {
+		name = in.SessionId
+	}
+	if name == "" {
+		name = "default"
+	}
+	session := recordSessionName(sanitizeSessionName(name))
+	sub := *in
+	sub.RecordName = name
+
+	switch in.Action {
+	case "", "start":
+		if _, err := recordStart(ctx, ex, &sub); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("session %s started", name), nil
+
+	case "status":
+		// Exact liveness probe: the tmux session name is the record name derived 1:1
+		// (recordSessionName), so has-session is the precise check — the recordList
+		// table's NAME column trims the record- prefix, a substring match on it could
+		// false-positive on a longer sibling name. The list output is still returned
+		// as the human-readable status.
+		if !tmuxHasSession(ctx, ex, session) {
+			return "", fmt.Errorf("session %s not active (tmux session %s not found)", name, session)
+		}
+		out, err := recordList(ctx, ex)
+		if err != nil {
+			return "", err
+		}
+		return out, nil
+
+	case "stop":
+		if in.Artifact == "" && in.ArtifactDir != "" {
+			in = &sub
+			sub.Artifact = filepath.Join(in.ArtifactDir, name+".cast") // provider-own format; the runner injects only the generic dir
+		}
+		if sub.Artifact == "" {
+			return "", fmt.Errorf("session stop requires an artifact path (the .cast the recording is pulled to)")
+		}
+		if in.StateDir == "" {
+			return "", fmt.Errorf("session stop requires state_dir (where the evidence row is written)")
+		}
+		if dir := filepath.Dir(sub.Artifact); dir != "." && dir != "" {
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				return "", fmt.Errorf("creating artifact dir: %w", err)
+			}
+		}
+		if _, err := recordStop(ctx, ex, &sub); err != nil {
+			return "", err
+		}
+		if err := writeSessionEvidenceRow(in, name); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("session %s stopped", name), nil
+
+	default:
+		return "", fmt.Errorf("unknown session action %q", in.Action)
+	}
+}
+
+// sessionEvidenceRow is the instrument evidence row a session stop writes into the
+// run's state dir — the Cutover A wire shape (a row with instrument/origin/verb/venue/
+// phase provenance and the artifact list). The artifact path is the operation's
+// artifact (the in.Artifact path the recording was pulled to); a record session always
+// produces a terminal .cast (asciinema) — the venue-side record transport.
+type sessionEvidenceRow struct {
+	Instrument string                    `json:"instrument"`
+	Origin     string                    `json:"origin"`
+	Verb       string                    `json:"verb"`
+	Venue      string                    `json:"venue"`
+	Phase      string                    `json:"phase"`
+	Artifact   []sessionEvidenceArtifact `json:"artifact"`
+}
+
+type sessionEvidenceArtifact struct {
+	Path string `json:"path"`
+	Kind string `json:"kind"`
+}
+
+// writeSessionEvidenceRow persists the session stop's evidence row to
+// <state_dir>/row.json after the recording has been pulled (recordStop already wrote
+// the .cast to in.Artifact). instrument is the RESOLVED session identity — the
+// venue-scoped session_id when set, else the record_name (the same resolution the
+// start/status/stop actions use), so a record_name-driven session still gets a
+// meaningful row.
+func writeSessionEvidenceRow(in *params.RecordInput, instrument string) error {
+	row := sessionEvidenceRow{
+		Instrument: instrument,
+		Origin:     "session",
+		Verb:       "record",
+		Venue:      in.Venue,
+		Phase:      in.Phase,
+		Artifact:   []sessionEvidenceArtifact{{Path: in.Artifact, Kind: "cast"}},
+	}
+	data, err := json.Marshal(row)
+	if err != nil {
+		return fmt.Errorf("marshaling session evidence row: %w", err)
+	}
+	if err := os.MkdirAll(in.StateDir, 0o755); err != nil {
+		return fmt.Errorf("creating state dir %s: %w", in.StateDir, err)
+	}
+	if err := os.WriteFile(filepath.Join(in.StateDir, "row.json"), data, 0o644); err != nil {
+		return fmt.Errorf("writing session evidence row: %w", err)
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -440,7 +588,10 @@ func recordFps(in *params.RecordInput) int {
 	return 30 // the in-tree RecordStartCmd.Fps default
 }
 
-func recordSessionName(name string) string { return "record-" + name }
+// recordSessionName maps a record name to its tmux session name. The name is
+// SANITIZED (tmux target syntax parses a dot as a session.window separator, so a
+// venue-scoped id <bed>.<member>.<id> must never sit raw in a tmux target).
+func recordSessionName(name string) string { return "record-" + sanitizeSessionName(name) }
 
 func recordingFilePath(name, mode string) string {
 	ext := ".mp4"
