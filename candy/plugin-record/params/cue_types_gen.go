@@ -105,4 +105,25 @@ type RecordInput struct {
 
 	// renderer — agg rendering backend: "swash" (default) or "resvg".
 	Renderer string `yaml:"renderer,omitempty" json:"renderer,omitempty"`
+
+	// --- session method (Cutover A instrument model — venue-side session; the
+	// tmux transport IS the session, already invocation-surviving) ---
+	// action — the session lifecycle action (start/stop/status); empty means start
+	// (the default lifecycle action, mirroring the instrument phase bracket).
+	Action string `yaml:"action,omitempty" json:"action,omitempty"`
+
+	// session_id — the venue-scoped session identity. When set it BECOMES the
+	// record_name (tmux session names must not collide across venues); falls back
+	// to record_name when empty.
+	SessionId string `yaml:"session_id,omitempty" json:"session_id,omitempty"`
+
+	// state_dir — the run's state directory; stop writes the instrument evidence
+	// row (<state_dir>/row.json) here.
+	StateDir string `yaml:"state_dir,omitempty" json:"state_dir,omitempty"`
+
+	// venue — the venue the session runs on (evidence-row provenance).
+	Venue string `yaml:"venue,omitempty" json:"venue,omitempty"`
+
+	// phase — the instrument phase bracket (evidence-row provenance).
+	Phase string `yaml:"phase,omitempty" json:"phase,omitempty"`
 }

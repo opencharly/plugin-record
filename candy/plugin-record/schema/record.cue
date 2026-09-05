@@ -26,7 +26,7 @@
 #RecordInput: {
 	// method — the record method to dispatch (the former core #RecordMethod
 	// enum; also the scalar-sugar primary: `record: <method>`).
-	method: "list" | "start" | "stop" | "cmd" | "run" | "gif"
+	method: "list" | "start" | "stop" | "cmd" | "run" | "gif" | "session"
 	// record_name — the recording session name (default "default").
 	record_name?: string @go(RecordName)
 	// record_mode — terminal (asciinema) / desktop (pixelflux-record or
@@ -81,4 +81,21 @@
 	last_frame_duration?: int & >=0 @go(LastFrameDuration,type=int)
 	// renderer — agg rendering backend: "swash" (default) or "resvg".
 	renderer?: string @go(Renderer)
+
+	// --- session method (Cutover A instrument model — venue-side session; the
+	// tmux transport IS the session, already invocation-surviving) ---
+	// action — the session lifecycle action (start/stop/status); empty means start
+	// (the default lifecycle action, mirroring the instrument phase bracket).
+	action?: "start" | "stop" | "status" @go(Action,type=string)
+	// session_id — the venue-scoped session identity. When set it BECOMES the
+	// record_name (tmux session names must not collide across venues); falls back
+	// to record_name when empty.
+	session_id?: string @go(SessionId)
+	// state_dir — the run's state directory; stop writes the instrument evidence
+	// row (<state_dir>/row.json) here.
+	state_dir?: string @go(StateDir)
+	// venue — the venue the session runs on (evidence-row provenance).
+	venue?: string @go(Venue)
+	// phase — the instrument phase bracket (evidence-row provenance).
+	phase?: string @go(Phase)
 }
