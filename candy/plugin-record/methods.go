@@ -23,8 +23,8 @@ import (
 // stderr into functions that RETURN the captured output string — so provider.go can feed
 // the output through the shared sdk matcher pipeline + the artifact validators (a host-side
 // matcher step does not run for an out-of-process verb). Every in-container
-// action (the asciinema/wf-recorder tmux session, the .mode metadata, the recording pull)
-// runs over the host executor reverse channel (sdk.Executor.RunCapture / GetFile) instead
+// action (the asciinema/wf-recorder tmux session, the .mode metadata, the recording land)
+// runs over the host executor reverse channel (sdk.Executor.RunCapture / sdk.LandArtifact) instead
 // of the in-proc DeployExecutor the host-side RecordCmd used, so a bed authored against the
 // in-tree verb passes unchanged.
 
@@ -78,15 +78,15 @@ func dispatch(ctx context.Context, ex *sdk.Executor, op *spec.Op, in *params.Rec
 	case "start":
 		return recordStart(ctx, ex, in)
 	case "stop":
-		return recordStop(ctx, ex, in)
+		return recordStop(ctx, ex, op, in)
 	case "cmd":
 		return recordCmd(ctx, ex, in)
 	case "run":
 		return recordRun(ctx, ex, in)
 	case "gif":
-		return recordGif(ctx, ex, in)
+		return recordGif(ctx, ex, op, in)
 	case "session":
-		return sessionDispatch(ctx, ex, in)
+		return sessionDispatch(ctx, ex, op, in)
 	}
 	return "", fmt.Errorf("unknown record method %q", method)
 }
@@ -125,7 +125,7 @@ func sanitizeSessionName(name string) string {
 // names must not collide across venues — so a session identity (session_id) becomes
 // the record name (falling back to record_name when unset) and the tmux session is
 // recordSessionName(that), exactly like a plain record: start.
-func sessionDispatch(ctx context.Context, ex *sdk.Executor, in *params.RecordInput) (string, error) {
+func sessionDispatch(ctx context.Context, ex *sdk.Executor, op *spec.Op, in *params.RecordInput) (string, error) {
 	name := in.RecordName
 	if in.SessionId != "" {
 		name = in.SessionId
@@ -175,7 +175,7 @@ func sessionDispatch(ctx context.Context, ex *sdk.Executor, in *params.RecordInp
 				return "", fmt.Errorf("creating artifact dir: %w", err)
 			}
 		}
-		if _, err := recordStop(ctx, ex, &sub); err != nil {
+		if _, err := recordStop(ctx, ex, op, &sub); err != nil {
 			return "", err
 		}
 		if err := writeSessionEvidenceRow(in, name); err != nil {
@@ -331,11 +331,13 @@ func recorderEnv(in *params.RecordInput) string {
 	return "env " + strings.Join(parts, " ")
 }
 
-// recordStop stops a recording session, copies the produced recording off the venue, and
-// writes it to the input's artifact path (the host path) so the provider's
-// RunArtifactValidators can read it. The artifact requirement is enforced by
-// sdk.RequireModifiers before dispatch.
-func recordStop(ctx context.Context, ex *sdk.Executor, in *params.RecordInput) (string, error) {
+// recordStop stops a recording session and lands the produced recording at the input's
+// artifact path (the host path) via sdk.LandArtifact — the shared pull+validate entry
+// point (R3) every capture plugin uses: the venue file is GetFile-pulled over the reverse
+// channel, written to the host artifact path, and the op's artifact validators run on it
+// (the artifact_min_cast_events .cast event-count gate is in the shared validator set). The
+// artifact requirement is enforced by sdk.RequireModifiers before dispatch.
+func recordStop(ctx context.Context, ex *sdk.Executor, op *spec.Op, in *params.RecordInput) (string, error) {
 	name := recordName(in)
 	session := recordSessionName(name)
 	if !tmuxHasSession(ctx, ex, session) {
@@ -365,16 +367,18 @@ func recordStop(ctx context.Context, ex *sdk.Executor, in *params.RecordInput) (
 	cleanupModeFile(ctx, ex, name)
 
 	outFile := recordingFilePath(name, mode)
-	// Pull the recording off the venue (over the reverse channel) and write it to the host
-	// artifact path BEFORE the provider's RunArtifactValidators reads it.
-	data, err := ex.GetFile(ctx, outFile, false)
+	// Land the recording: pull off the venue (over the reverse channel), write it to the
+	// host artifact path, and run the op's artifact validators (sdk.LandArtifact).
+	if err := sdk.LandArtifact(ctx, ex, outFile, in.Artifact, op); err != nil {
+		return "", err
+	}
+	// Keep the byte count in the message (the recordings-manifest parser in plugin-check
+	// scans this exact "saved N bytes to <path>" shape).
+	info, err := os.Stat(in.Artifact)
 	if err != nil {
-		return "", fmt.Errorf("copying recording: %w (file: %s)", err, outFile)
+		return "", fmt.Errorf("statting landed recording %s: %w", in.Artifact, err)
 	}
-	if err := os.WriteFile(in.Artifact, data, 0o644); err != nil {
-		return "", fmt.Errorf("writing recording to %s: %w", in.Artifact, err)
-	}
-	return fmt.Sprintf("Recording stopped (mode: %s); saved %d bytes to %s", mode, len(data), in.Artifact), nil
+	return fmt.Sprintf("Recording stopped (mode: %s); saved %d bytes to %s", mode, info.Size(), in.Artifact), nil
 }
 
 // recordList lists active recording sessions on the venue as a tab-aligned table. A missing
@@ -443,14 +447,14 @@ func recordCmd(ctx context.Context, ex *sdk.Executor, in *params.RecordInput) (s
 }
 
 // recordGif renders a STOPPED terminal recording (.cast) to an animated GIF with agg
-// (asciinema/agg, installed by the asciinema candy) and copies the .gif to the input's
-// artifact path (the host path), so the provider's RunArtifactValidators can read it —
-// the same GetFile-pull shape as recordStop. The .cast must exist on the venue (a
-// terminal recording that was started and stopped); the artifact requirement is enforced
-// by sdk.RequireModifiers before dispatch. agg options ride the typed input (theme,
-// font_size, speed, idle_time_limit, fps_cap, select, cols, rows, no_loop,
-// last_frame_duration, renderer) and map 1:1 to agg's CLI flags.
-func recordGif(ctx context.Context, ex *sdk.Executor, in *params.RecordInput) (string, error) {
+// (asciinema/agg, installed by the asciinema candy) and lands the .gif at the input's
+// artifact path (the host path) via sdk.LandArtifact — the same pull+validate entry point
+// as recordStop. The .cast must exist on the venue (a terminal recording that was started
+// and stopped); the artifact requirement is enforced by sdk.RequireModifiers before
+// dispatch. agg options ride the typed input (theme, font_size, speed, idle_time_limit,
+// fps_cap, select, cols, rows, no_loop, last_frame_duration, renderer) and map 1:1 to
+// agg's CLI flags.
+func recordGif(ctx context.Context, ex *sdk.Executor, op *spec.Op, in *params.RecordInput) (string, error) {
 	name := recordName(in)
 	castFile := recordingFilePath(name, "terminal")
 	// The .cast must be present on the venue — a recording that was started and
@@ -466,14 +470,16 @@ func recordGif(ctx context.Context, ex *sdk.Executor, in *params.RecordInput) (s
 	if err := ex.VenueRunSilent(ctx, cmd); err != nil {
 		return "", fmt.Errorf("agg conversion failed: %w", err)
 	}
-	data, err := ex.GetFile(ctx, gifFile, false)
+	if err := sdk.LandArtifact(ctx, ex, gifFile, in.Artifact, op); err != nil {
+		return "", err
+	}
+	// Keep the byte count in the message (the recordings-manifest parser in plugin-check
+	// scans this exact "saved N bytes to <path>" shape).
+	info, err := os.Stat(in.Artifact)
 	if err != nil {
-		return "", fmt.Errorf("copying gif: %w (file: %s)", err, gifFile)
+		return "", fmt.Errorf("statting rendered gif %s: %w", in.Artifact, err)
 	}
-	if err := os.WriteFile(in.Artifact, data, 0o644); err != nil {
-		return "", fmt.Errorf("writing gif to %s: %w", in.Artifact, err)
-	}
-	return fmt.Sprintf("GIF rendered from %s: %d bytes written to %s", castFile, len(data), in.Artifact), nil
+	return fmt.Sprintf("GIF rendered from %s: %d bytes written to %s", castFile, info.Size(), in.Artifact), nil
 }
 
 // aggArgs builds the agg CLI option prefix from the typed input. Every option maps 1:1
