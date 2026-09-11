@@ -1,6 +1,9 @@
 package record
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -196,5 +199,46 @@ func TestRequireModifiers(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 			t.Errorf("%s: expected error containing %q, got %v", tc.method, tc.wantErr, err)
 		}
+	}
+}
+
+// TestRecordStopRunsOpArtifactValidators proves the sdk.LandArtifact migration (G-8/G-9):
+// the op's artifact validators now run INSIDE recordStop, not only in the provider's
+// VerbVerdict gate. The fake's pulled .cast has zero events, so a stop op declaring
+// artifact_min_cast_events: 5 must FAIL at dispatch — this test FAILS on the
+// pre-migration code, where dispatch(recordStop) returned nil and validation happened
+// only after the provider's VerbVerdict artifact gate.
+func TestRecordStopRunsOpArtifactValidators(t *testing.T) {
+	f := newFakeExecutor()
+	ex := sdk.NewInProcExecutor(f)
+	ctx := context.Background()
+	artifact := filepath.Join(t.TempDir(), "demo.cast")
+
+	op := &spec.Op{PluginInput: map[string]any{
+		"method":                   "stop",
+		"artifact":                 artifact,
+		"artifact_min_cast_events": 5, // the fake's cast ({"version": 2, "events": []}) has 0 events
+	}}
+	in := &params.RecordInput{Method: "stop", RecordName: "demo", Artifact: artifact}
+
+	// bring the venue session up so stop has a live recording to stop
+	if _, err := dispatch(ctx, ex, &spec.Op{}, &params.RecordInput{Method: "start", RecordName: "demo"}); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+
+	_, err := dispatch(ctx, ex, op, in)
+	if err == nil {
+		t.Fatal("record stop with artifact_min_cast_events: 5 on a 0-event cast: want the validator error, got nil (validators did not run inside dispatch)")
+	}
+	if !strings.Contains(err.Error(), "want >= 5") {
+		t.Errorf("error = %q, want the artifact_min_cast_events validator error", err)
+	}
+	// the pull+write still happened before validation (LandArtifact lands, then validates)
+	data, rerr := os.ReadFile(artifact)
+	if rerr != nil {
+		t.Fatalf("landed artifact %s not written: %v", artifact, rerr)
+	}
+	if len(data) == 0 {
+		t.Errorf("landed artifact %s is empty", artifact)
 	}
 }
