@@ -20,8 +20,9 @@ import (
 // invokeVerbProvider). Because the out-of-process path does NOT run a host-side
 // matcher pipeline, this Invoke OWNS the whole verdict: get the venue
 // executor (sdk.ExecutorFromInvoke), dispatch the method (RunCapture-driven; `stop` also
-// GetFile-pulls the recording to op.Artifact), then evaluate the stdout/stderr/exit_status
-// matchers + the artifact validators itself (via the shared sdk implementation — R3), and
+// lands the recording at op.Artifact via sdk.LandArtifact), then evaluate the
+// stdout/stderr/exit_status matchers + the artifact validators itself (via the shared sdk
+// implementation — R3), and
 // return the wire {status,message} the host decodes.
 
 // recordEnv is the plugin-side decode of the CheckEnv the host ships as Operation.Env for
@@ -79,7 +80,8 @@ func (p provider) Invoke(ctx context.Context, req *pb.InvokeRequest) (*pb.Invoke
 	out, runErr := dispatch(ctx, exec, &op, &in)
 
 	// The shared exit/stdout/stderr + artifact verdict pipeline (R3). The artifact-producing
-	// method (`stop`) already GetFile-pulled the recording to the input's artifact path inside
-	// dispatch, so a non-empty in.Artifact is the artifact gate (a no-op for list/start/cmd).
+	// method (`stop`) already landed the recording at the input's artifact path inside dispatch
+	// (sdk.LandArtifact, which also ran the op's artifact validators), so a non-empty
+	// in.Artifact is the artifact gate (a no-op for list/start/cmd).
 	return sdk.VerbVerdict("record", method, out, runErr, &op, in.Artifact != "")
 }
